@@ -158,6 +158,118 @@ const PAL = {
   wizardGold: '#f4d03f',
 };
 
+// ========== CHIPTUNE AUDIO ENGINE ==========
+let audioCtx = null;
+let currentMusic = null;
+let musicGain = null;
+let musicPlaying = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.12;
+  musicGain.connect(audioCtx.destination);
+}
+
+// Play a single chiptune note
+function playNote(freq, duration, type = 'square', gainVal = 0.1, delay = 0) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(gainVal, audioCtx.currentTime + delay);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(audioCtx.currentTime + delay);
+  osc.stop(audioCtx.currentTime + delay + duration);
+}
+
+// Play SFX
+function playSfxStep() {
+  playNote(200 + Math.random() * 60, 0.05, 'square', 0.03);
+}
+
+function playSfxInteract() {
+  playNote(440, 0.08, 'square', 0.08);
+  playNote(660, 0.08, 'square', 0.08, 0.08);
+}
+
+function playSfxQuizSelect() {
+  playNote(330, 0.06, 'square', 0.06);
+}
+
+function playSfxQuizConfirm() {
+  playNote(440, 0.1, 'square', 0.1);
+  playNote(554, 0.1, 'square', 0.1, 0.1);
+  playNote(660, 0.15, 'square', 0.1, 0.2);
+}
+
+function playSfxTransition() {
+  for (let i = 0; i < 8; i++) {
+    playNote(200 + i * 50, 0.15, 'triangle', 0.06, i * 0.06);
+  }
+}
+
+// ========== ZONE MUSIC LOOPS ==========
+// Each zone gets a distinct mood via looping arpeggios
+
+let musicInterval = null;
+
+function stopMusic() {
+  if (musicInterval) {
+    clearInterval(musicInterval);
+    musicInterval = null;
+  }
+  musicPlaying = false;
+}
+
+function startZoneMusic(zone) {
+  stopMusic();
+  if (!audioCtx) return;
+  musicPlaying = true;
+
+  const bpm = [110, 90, 100, 70, 60][zone] || 100;
+  const interval = (60 / bpm) * 1000 / 2; // eighth notes
+  let step = 0;
+
+  // Zone 0: Uncertainville — curious, hopeful, simple melody
+  const melodies = [
+    // Uncertainville: C major arpeggio, gentle & wondering
+    { notes: [262, 330, 392, 330, 262, 294, 349, 294, 262, 330, 392, 440, 392, 330, 294, 262],
+      type: 'square', gain: 0.05, bass: [131, 131, 147, 147, 131, 131, 147, 147, 131, 131, 147, 147, 165, 165, 131, 131] },
+    // Media Swamp: dissonant, tense, minor key with chromatic tension
+    { notes: [220, 233, 262, 233, 220, 208, 196, 208, 220, 262, 277, 262, 233, 220, 208, 196],
+      type: 'sawtooth', gain: 0.04, bass: [110, 110, 104, 104, 110, 110, 98, 98, 110, 110, 104, 104, 98, 98, 110, 110] },
+    // Opinion Forest: chaotic, shifting between keys, slightly comedic
+    { notes: [294, 330, 370, 330, 294, 349, 392, 349, 330, 370, 294, 262, 294, 330, 370, 392],
+      type: 'square', gain: 0.05, bass: [147, 147, 165, 165, 175, 175, 147, 147, 165, 165, 147, 147, 131, 131, 147, 147] },
+    // Worry Mountains: slow, haunting, minor with sustained feel
+    { notes: [196, 0, 233, 0, 220, 0, 196, 0, 175, 0, 196, 0, 220, 0, 233, 0],
+      type: 'triangle', gain: 0.06, bass: [98, 0, 110, 0, 98, 0, 88, 0, 98, 0, 110, 0, 98, 0, 88, 0] },
+    // Wizard Tower: warm, magical, resolving, major with sparkle
+    { notes: [330, 392, 494, 392, 330, 440, 524, 440, 330, 392, 494, 587, 524, 494, 440, 392],
+      type: 'triangle', gain: 0.06, bass: [165, 165, 196, 196, 220, 220, 196, 196, 165, 165, 196, 196, 220, 220, 165, 165] },
+  ];
+
+  const m = melodies[zone] || melodies[0];
+
+  musicInterval = setInterval(() => {
+    if (!musicPlaying) return;
+    const noteFreq = m.notes[step % m.notes.length];
+    const bassFreq = m.bass[step % m.bass.length];
+    if (noteFreq > 0) {
+      playNote(noteFreq, interval / 1000 * 1.5, m.type, m.gain);
+    }
+    if (bassFreq > 0) {
+      playNote(bassFreq, interval / 1000 * 2, 'triangle', m.gain * 0.6);
+    }
+    step++;
+  }, interval);
+}
+
 // ========== GAME STATE ==========
 let gameState = 'title'; // title, playing, dialogue, quiz, transition, ending
 let currentZone = 0;
@@ -297,16 +409,19 @@ const ZONES = [
   },
   // Zone 4: The Wizard's Tower
   {
-    name: "The Wizard's Tower",
+    name: "The Iconoclastic Guide",
     bgColor: '#0e0e2a',
     playerStart: { x: 7, y: 13 },
     exitTile: null,
     introDialogue: [
       "A warm light glows ahead...",
-      "You've made it through the\nnoise, the opinions, and\nthe worry.",
-      "Someone is waiting for you.",
+      "You've walked through the\nnoise, the opinions, and\nyour own doubts.",
+      "Not everyone makes it\nthis far. But you did.",
     ],
-    npcs: [],
+    npcs: [
+      { x: 4, y: 9, type: 'sign', lines: ["You don't have to figure\nthis out alone."] },
+      { x: 10, y: 9, type: 'sign', lines: ["No commissions. No agenda.\nJust your best interest."] },
+    ],
     wizard: { x: 7, y: 5 }
   }
 ];
@@ -809,7 +924,8 @@ function showQuiz(quiz) {
 }
 
 function drawQuiz() {
-  if (!quizData) return;
+  const qd = (currentZone === 4 && wizardQuizData) ? wizardQuizData : quizData;
+  if (!qd) return;
 
   // Overlay
   ctx.fillStyle = 'rgba(0,0,0,0.92)';
@@ -818,19 +934,19 @@ function drawQuiz() {
   // Question
   ctx.fillStyle = PAL.accent;
   ctx.font = '13px "Press Start 2P"';
-  const qLines = quizData.question.split('\n');
+  const qLines = qd.question.split('\n');
   for (let i = 0; i < qLines.length; i++) {
     ctx.fillText(qLines[i], 24, 60 + i * 24);
   }
 
   // Options
   const startY = 140;
-  for (let i = 0; i < quizData.options.length; i++) {
+  for (let i = 0; i < qd.options.length; i++) {
     const selected = i === quizSelection;
     ctx.fillStyle = selected ? PAL.accent : PAL.gray;
     ctx.font = '11px "Press Start 2P"';
     const prefix = selected ? '► ' : '  ';
-    ctx.fillText(prefix + quizData.options[i], 24, startY + i * 52);
+    ctx.fillText(prefix + qd.options[i], 24, startY + i * 52);
 
     if (selected) {
       ctx.fillStyle = 'rgba(226,183,20,0.1)';
@@ -865,6 +981,8 @@ function startTransition(callback) {
   transitionDir = 1;
   transitionCallback = callback;
   gameState = 'transition';
+  playSfxTransition();
+  stopMusic();
 }
 
 function updateTransition() {
@@ -881,6 +999,7 @@ function updateTransition() {
       transitionAlpha = 0;
       transitionDir = 0;
       gameState = 'playing';
+      startZoneMusic(currentZone);
       // Show intro dialogue for new zone
       const z = ZONES[currentZone];
       if (z.introDialogue) {
@@ -943,43 +1062,110 @@ function drawTitleScreen() {
   ctx.textAlign = 'left';
 }
 
-// ========== ENDING SCREEN ==========
-function getWizardMessage() {
-  const stage = LIFE_STAGES[titleSelection];
-  let stageMsg = "";
-  if (titleSelection === 0) stageMsg = "You're at the beginning of\nyour journey. That's actually\nthe best time to get it right.";
-  else if (titleSelection === 1) stageMsg = "You're building something\nimportant. A family, a career,\na future. That takes a plan.";
-  else stageMsg = "You've worked hard to get\nhere. Now it's about making\nsure it all works together.";
-
-  let worryMsg = "";
-  if (quizAnswers.length >= 3) {
-    const worry = quizAnswers[2].index;
-    if (worry === 0) worryMsg = "Retirement doesn't have to be\nscary. It just takes someone\nwho's done this before.";
-    else if (worry === 1) worryMsg = "Protecting the people you love\nis the most human reason to\nplan. Let's make sure you do.";
-    else if (worry === 2) worryMsg = "The fear of a mistake keeps\nmost people frozen. That's\nworse than any wrong move.";
-    else worryMsg = "Trust is earned, not sold.\nThat's exactly why we only\nget paid by you. No one else.";
-  }
-
-  return [
-    "...",
-    "I've been expecting you.",
-    stageMsg,
-    "You've walked through the\nscary headlines, the unsolicited\nadvice, and your own doubts.",
-    worryMsg,
-    "The noise out there is\ndesigned to confuse you.\nThat's not an accident.",
-    "But you made it here.\nThat tells me you're ready\nfor something real.",
-    "You don't have to figure\nthis out alone. That's\nliterally why we exist.",
-    "We're Iconoclastic Capital.\nFee-only. No commissions.\nNo agenda except yours.",
-    "Right here with you.",
-  ];
-}
+// ========== INTERACTIVE WIZARD SYSTEM ==========
+let wizardPhase = 0;
+let wizardChoice = 0;
+let wizardQuizData = null;
 
 function triggerEnding() {
-  endingPhase = 0;
-  const msgs = getWizardMessage();
-  showDialogue(msgs);
+  wizardPhase = 1;
+  stopMusic();
+  // Magical reveal sound
+  for (let i = 0; i < 12; i++) {
+    playNote(330 + i * 40, 0.3, 'triangle', 0.05, i * 0.08);
+  }
+  showDialogue([
+    "...",
+    "I've been expecting you.",
+    "I'm The Iconoclastic Guide.",
+    "I help people like you cut\nthrough the noise and find\nclarity.",
+    "Let me tell you what I saw\non your journey..."
+  ]);
   gameState = 'dialogue';
-  // After dialogue, we'll show CTA
+}
+
+function advanceWizardPhase() {
+  wizardPhase++;
+
+  if (wizardPhase === 2) {
+    // Reflection based on their journey
+    let stageMsg = "";
+    if (titleSelection === 0) stageMsg = "You're early in your journey.\nThat's actually the best time\nto get it right.";
+    else if (titleSelection === 1) stageMsg = "You're building something\nimportant. A family, a career.\nThat takes a real plan.";
+    else stageMsg = "You've worked hard to get\nhere. Now it's about making\nsure it all works together.";
+
+    let noiseMsg = "";
+    if (quizAnswers.length >= 2) {
+      const m = quizAnswers[1].index;
+      if (m === 0) noiseMsg = "The media had you scared.\nThat's by design. Fear sells.\nClarity doesn't make headlines.";
+      else if (m === 1) noiseMsg = "You felt the anxiety but\nheld on. That takes strength.\nBut you shouldn't white-knuckle\nit alone.";
+      else if (m === 2) noiseMsg = "You tuned out the noise.\nSmart. But ignoring everything\nisn't a plan either.";
+      else noiseMsg = "You wanted to research first.\nI respect that. But even the\nbest researchers need a guide.";
+    }
+
+    showDialogue([stageMsg, noiseMsg]);
+    gameState = 'dialogue';
+  }
+  else if (wizardPhase === 3) {
+    // Interactive question FROM the wizard
+    wizardQuizData = {
+      question: "The Iconoclastic Guide asks:\n\nWhat would make the biggest\ndifference for you right now?",
+      options: [
+        "Someone to organize the chaos",
+        "A plan I actually understand",
+        "Knowing my family is protected",
+        "Confidence I'm on the right path"
+      ]
+    };
+    quizSelection = 0;
+    gameState = 'quiz';
+  }
+  else if (wizardPhase === 4) {
+    // Personalized response to their choice
+    const responses = [
+      ["That's what we do. We take\nthe scattered pieces of your\nfinancial life...", "...and build one clear picture.\nMultiple experts. One plan.\nNo solo acts, no guessing."],
+      ["Financial plans shouldn't\nneed a decoder ring.", "We explain everything in\nplain language. If you don't\nget it, we failed. Not you."],
+      ["Protecting the people you\nlove is the most human reason\nto plan.", "We make sure the people who\ndepend on you are covered.\nThat's not optional for us."],
+      ["That doubt you feel?\nThat's the noise talking.", "A real plan, built by people\nwho only answer to you,\nreplaces doubt with clarity."]
+    ];
+    const r = responses[wizardChoice] || responses[0];
+
+    // Play warm resolution sound
+    playNote(330, 0.3, 'triangle', 0.06);
+    playNote(440, 0.3, 'triangle', 0.06, 0.2);
+    playNote(524, 0.4, 'triangle', 0.06, 0.4);
+
+    showDialogue(r);
+    gameState = 'dialogue';
+  }
+  else if (wizardPhase === 5) {
+    // Final pitch - who we are
+    let worryMsg = "";
+    if (quizAnswers.length >= 4) {
+      const w = quizAnswers[3].index;
+      if (w === 0) worryMsg = "Retirement isn't scary with\nthe right map. We've drawn\nhundreds of them.";
+      else if (w === 1) worryMsg = "Your family's safety isn't\nsomething to leave to chance.\nWe build the safety net.";
+      else if (w === 2) worryMsg = "The fear of a mistake keeps\npeople frozen. That's worse\nthan any wrong move.";
+      else worryMsg = "Trust is earned, not sold.\nWe're fee-only fiduciaries.\nWe can only be paid by you.";
+    }
+
+    showDialogue([
+      worryMsg || "We're different. On purpose.",
+      "No commissions. No kickbacks.\nNo hidden fees. Ever.",
+      "We're Iconoclastic Capital.",
+      "We exist to challenge how\nfinancial advice is given.",
+      "And we're right here with you."
+    ]);
+    gameState = 'dialogue';
+  }
+  else if (wizardPhase >= 6) {
+    gameState = 'ending';
+    // Play final magical chord
+    playNote(262, 1.0, 'triangle', 0.05);
+    playNote(330, 1.0, 'triangle', 0.05);
+    playNote(392, 1.0, 'triangle', 0.05);
+    playNote(524, 1.0, 'triangle', 0.04);
+  }
 }
 
 function drawEndingCTA() {
@@ -987,46 +1173,60 @@ function drawEndingCTA() {
   ctx.fillRect(0, 0, W, H);
 
   // Stars
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 50; i++) {
     const sx = (i * 37 + Math.sin(frameCount * 0.01 + i) * 10) % W;
     const sy = (i * 53 + Math.cos(frameCount * 0.01 + i) * 6) % H;
     ctx.fillStyle = `rgba(255,255,255,${Math.sin(frameCount * 0.03 + i) * 0.3 + 0.4})`;
     ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
   }
 
-  // Glow
-  const glow = Math.sin(frameCount * 0.02) * 0.1 + 0.3;
+  // Large warm glow behind wizard
+  const glow = Math.sin(frameCount * 0.02) * 0.08 + 0.2;
   ctx.fillStyle = `rgba(244, 208, 63, ${glow})`;
   ctx.beginPath();
-  ctx.arc(W / 2, 120, 60, 0, Math.PI * 2);
+  ctx.arc(W / 2, 100, 70, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(74, 144, 217, ${glow * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(W / 2, 100, 90, 0, Math.PI * 2);
   ctx.fill();
 
   // Wizard
-  drawSprite(7, 3, 'wizard', 0, 0);
+  drawSprite(7, 2, 'wizard', 0, 0);
 
   ctx.textAlign = 'center';
 
+  // Title
   ctx.fillStyle = PAL.wizardGold;
-  ctx.font = '14px "Press Start 2P"';
-  ctx.fillText('Right here with you.', W / 2, 220);
+  ctx.font = '11px "Press Start 2P"';
+  ctx.fillText('THE ICONOCLASTIC GUIDE', W / 2, 175);
 
   ctx.fillStyle = PAL.white;
-  ctx.font = '12px "Press Start 2P"';
-  ctx.fillText('Your financial journey', W / 2, 265);
-  ctx.fillText("doesn't have to be solo.", W / 2, 290);
+  ctx.font = '14px "Press Start 2P"';
+  ctx.fillText('Right here with you.', W / 2, 210);
+
+  // Subtitle
+  ctx.fillStyle = PAL.lightGray;
+  ctx.font = '9px "Press Start 2P"';
+  ctx.fillText('Iconoclastic Capital', W / 2, 250);
+  ctx.fillText('Fee-Only Fiduciary', W / 2, 270);
 
   // CTA Button
   const btnPulse = Math.sin(frameCount * 0.04) * 3;
-  const btnY = 330 + btnPulse;
+  const btnY = 310 + btnPulse;
+  // Button glow
+  ctx.fillStyle = `rgba(244, 208, 63, 0.15)`;
+  ctx.fillRect(70, btnY - 6, W - 140, 62);
+  // Button
   ctx.fillStyle = PAL.wizardGold;
   ctx.fillRect(80, btnY, W - 160, 50);
   ctx.fillStyle = '#0a0a1a';
-  ctx.font = '13px "Press Start 2P"';
-  ctx.fillText("LET'S TALK →", W / 2, btnY + 32);
+  ctx.font = '12px "Press Start 2P"';
+  ctx.fillText("SEE IF WE'RE A FIT →", W / 2, btnY + 32);
 
   ctx.fillStyle = PAL.gray;
-  ctx.font = '10px "Press Start 2P"';
-  ctx.fillText('CLICK or press SPACE', W / 2, H - 30);
+  ctx.font = '9px "Press Start 2P"';
+  ctx.fillText('CLICK or press SPACE', W / 2, H - 24);
 
   ctx.textAlign = 'left';
 }
@@ -1063,7 +1263,7 @@ function handleInput() {
   }
   else if (gameState === 'playing') {
     moveTimer++;
-    if (moveTimer < 6) return; // movement speed limiter
+    if (moveTimer < 12) return; // movement speed limiter
 
     let dx = 0, dy = 0;
     if (keysDown['ArrowUp'] || keysDown['w'] || keysDown['W']) { dy = -1; player.dir = 1; }
@@ -1080,6 +1280,7 @@ function handleInput() {
         player.frame++;
         player.moving = true;
         moveTimer = 0;
+        if (player.frame % 2 === 0) playSfxStep();
 
         // Check exit
         const z = ZONES[currentZone];
@@ -1120,21 +1321,37 @@ function interact() {
 
   if (gameState === 'dialogue') {
     if (!currentDialogue) {
-      if (currentZone === 4 && dialogueQueue.length === 0) {
-        gameState = 'ending';
+      if (currentZone === 4 && wizardPhase > 0 && dialogueQueue.length === 0) {
+        advanceWizardPhase();
       }
       return;
     }
+    playSfxInteract();
     advanceDialogue();
-    // Check if dialogue is done and we're at wizard
-    if (!currentDialogue && currentZone === 4) {
-      gameState = 'ending';
+    // Check if dialogue is done and we're in wizard interaction
+    if (!currentDialogue && currentZone === 4 && wizardPhase > 0) {
+      advanceWizardPhase();
     }
     return;
   }
 
   if (gameState === 'quiz') {
-    selectQuizAnswer();
+    // Check if this is the wizard's quiz
+    if (currentZone === 4 && wizardQuizData) {
+      wizardChoice = quizSelection;
+      quizAnswers.push({
+        question: wizardQuizData.question,
+        answer: wizardQuizData.options[quizSelection],
+        index: quizSelection
+      });
+      wizardQuizData = null;
+      playSfxQuizConfirm();
+      wizardPhase = 3; // will advance to 4
+      advanceWizardPhase();
+    } else {
+      playSfxQuizConfirm();
+      selectQuizAnswer();
+    }
     return;
   }
 
@@ -1150,6 +1367,7 @@ function interact() {
 
     for (const npc of npcs) {
       if (npc.x === facingX && npc.y === facingY) {
+        playSfxInteract();
         showDialogue(npc.lines);
         npc.talked = true;
         return;
@@ -1157,6 +1375,7 @@ function interact() {
       // Also check if standing adjacent
       const dist = Math.abs(player.x - npc.x) + Math.abs(player.y - npc.y);
       if (dist <= 1) {
+        playSfxInteract();
         showDialogue(npc.lines);
         npc.talked = true;
         return;
@@ -1240,12 +1459,16 @@ document.addEventListener('keydown', (e) => {
   if (gameState === 'title') {
     if (e.key === 'ArrowUp' || e.key === 'w') {
       titleSelection = (titleSelection - 1 + LIFE_STAGES.length) % LIFE_STAGES.length;
+      initAudio(); playSfxQuizSelect();
     }
     if (e.key === 'ArrowDown' || e.key === 's') {
       titleSelection = (titleSelection + 1) % LIFE_STAGES.length;
+      initAudio(); playSfxQuizSelect();
     }
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
+      initAudio();
+      playSfxQuizConfirm();
       quizAnswers = [{ question: 'Life Stage', answer: LIFE_STAGES[titleSelection], index: titleSelection }];
       gameState = 'transition';
       transitionAlpha = 0;
@@ -1253,15 +1476,19 @@ document.addEventListener('keydown', (e) => {
       transitionCallback = () => {
         currentZone = 0;
         setupZone();
+        startZoneMusic(0);
       };
     }
   }
   else if (gameState === 'quiz') {
+    const qd = (currentZone === 4 && wizardQuizData) ? wizardQuizData : quizData;
     if (e.key === 'ArrowUp' || e.key === 'w') {
-      quizSelection = (quizSelection - 1 + quizData.options.length) % quizData.options.length;
+      quizSelection = (quizSelection - 1 + qd.options.length) % qd.options.length;
+      playSfxQuizSelect();
     }
     if (e.key === 'ArrowDown' || e.key === 's') {
-      quizSelection = (quizSelection + 1) % quizData.options.length;
+      quizSelection = (quizSelection + 1) % qd.options.length;
+      playSfxQuizSelect();
     }
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
@@ -1291,13 +1518,15 @@ function setupMobile() {
   if (actionBtn) {
     actionBtn.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      initAudio();
       if (gameState === 'title') {
         // Start game
+        playSfxQuizConfirm();
         quizAnswers = [{ question: 'Life Stage', answer: LIFE_STAGES[titleSelection], index: titleSelection }];
         gameState = 'transition';
         transitionAlpha = 0;
         transitionDir = 1;
-        transitionCallback = () => { currentZone = 0; setupZone(); };
+        transitionCallback = () => { currentZone = 0; setupZone(); startZoneMusic(0); };
       } else {
         interact();
       }
