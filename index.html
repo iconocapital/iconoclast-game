@@ -93,6 +93,9 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
   }
 
   .dpad button:active { background: rgba(255,255,255,0.4); }
@@ -111,6 +114,9 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
     flex-shrink: 0;
   }
 
@@ -1650,10 +1656,52 @@ function setupMobile() {
   for (const [id, key] of Object.entries(dirs)) {
     const btn = document.getElementById(id);
     if (!btn) continue;
-    btn.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); keysDown[key] = true; }, { passive: false });
-    btn.addEventListener('touchend', (e) => { e.preventDefault(); keysDown[key] = false; }, { passive: false });
-    btn.addEventListener('touchcancel', (e) => { e.preventDefault(); keysDown[key] = false; }, { passive: false });
-    btn.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+    let holdInterval = null;
+    btn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      initAudio();
+      keysDown[key] = true;
+      moveTimer = 999; // force immediate movement on first touch
+      // Dispatch a synthetic keydown for title/quiz screens
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true }));
+      // Also set up repeat movement for holding
+      if (holdInterval) clearInterval(holdInterval);
+      holdInterval = setInterval(() => {
+        moveTimer = 999;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true }));
+      }, 200);
+    }, { passive: false });
+    const stopHold = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      keysDown[key] = false;
+      if (holdInterval) { clearInterval(holdInterval); holdInterval = null; }
+    };
+    btn.addEventListener('touchend', stopHold, { passive: false });
+    btn.addEventListener('touchcancel', stopHold, { passive: false });
+    btn.addEventListener('touchmove', (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+    // Also support mouse for testing
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      keysDown[key] = true;
+      moveTimer = 999;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true }));
+      if (holdInterval) clearInterval(holdInterval);
+      holdInterval = setInterval(() => {
+        moveTimer = 999;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true }));
+      }, 200);
+    });
+    btn.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      keysDown[key] = false;
+      if (holdInterval) { clearInterval(holdInterval); holdInterval = null; }
+    });
+    btn.addEventListener('mouseleave', (e) => {
+      keysDown[key] = false;
+      if (holdInterval) { clearInterval(holdInterval); holdInterval = null; }
+    });
   }
 
   const actionBtn = document.getElementById('action-btn');
