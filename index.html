@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>Iconoclast: Find Your Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: #0a0a0a;
+    min-height: 100%;
+    min-height: 100dvh;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-overflow-scrolling: auto;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Press Start 2P', monospace;
+  }
+
+  #game-wrapper {
+    position: relative;
+    width: 95vmin;
+    height: 95vmin;
+    max-width: 800px;
+    max-height: 800px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+    border: 4px solid #2a2a2a;
+    border-radius: 4px;
+    touch-action: none;
+  }
+
+  #mobile-controls {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    touch-action: none;
+  }
+
+  .controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .dpad {
+    display: grid;
+    grid-template-columns: 56px 56px 56px;
+    grid-template-rows: 56px 56px 56px;
+    gap: 3px;
+    touch-action: none;
+  }
+
+  .dpad button {
+    background: rgba(255,255,255,0.18);
+    border: 2px solid rgba(255,255,255,0.35);
+    border-radius: 8px;
+    color: white;
+    font-size: 20px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  .dpad button:active { background: rgba(255,255,255,0.4); }
+  .dpad .empty { background: none; border: none; pointer-events: none; }
+
+  #action-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(100,200,100,0.3);
+    border: 3px solid rgba(100,200,100,0.6);
+    color: white;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px;
+    display: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    flex-shrink: 0;
+  }
+
+  #action-btn:active { background: rgba(100,200,100,0.5); }
+
+  @media (hover: none) and (pointer: coarse) {
+    #mobile-controls { display: block; }
+    #action-btn { display: block; }
+
+    body {
+      justify-content: flex-start;
+      padding-top: max(8px, env(safe-area-inset-top));
+    }
+
+    #game-wrapper {
+      width: 100vw;
+      height: calc(100dvh - 200px - env(safe-area-inset-bottom));
+      max-width: 100vw;
+      max-height: calc(100dvh - 200px);
+    }
+
+    canvas {
+      border: none;
+      border-radius: 0;
+    }
+  }
+
+  /* Small phones (iPhone SE, etc) */
+  @media (hover: none) and (pointer: coarse) and (max-height: 700px) {
+    #game-wrapper {
+      height: calc(100dvh - 185px);
+    }
+    .dpad {
+      grid-template-columns: 48px 48px 48px;
+      grid-template-rows: 48px 48px 48px;
+    }
+    #action-btn { width: 68px; height: 68px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <canvas id="game" width="480" height="480"></canvas>
+</div>
+
+<div id="mobile-controls">
+  <div class="controls-row">
+    <div class="dpad">
+      <div class="empty"></div>
+      <button id="btn-up">▲</button>
+      <div class="empty"></div>
+      <button id="btn-left">◄</button>
+      <div class="empty"></div>
+      <button id="btn-right">►</button>
+      <div class="empty"></div>
+      <button id="btn-down">▼</button>
+      <div class="empty"></div>
+    </div>
+    <button id="action-btn">A</button>
+  </div>
+</div>
+
+<script>
+// ========================================
+// ICONOCLAST: FIND YOUR GUIDE
+// A retro RPG financial planning journey
+// ========================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 480;
+const TILE = 32;
+const COLS = W / TILE; // 15
+const ROWS = H / TILE; // 15
+
+// Disable anti-aliasing for crisp pixels
+ctx.imageSmoothingEnabled = false;
+ctx.mozImageSmoothingEnabled = false;
+ctx.webkitImageSmoothingEnabled = false;
+ctx.msImageSmoothingEnabled = false;
+
+// Color palette
+const PAL = {
+  black: '#0a0a0a',
+  dark: '#1a1a2e',
+  mid: '#16213e',
+  accent: '#e2b714',
+  green: '#4a7c59',
+  darkGreen: '#2d5a3f',
+  red: '#8b3a3a',
+  blue: '#3a5a8b',
+  lightBlue: '#6a9fd8',
+  white: '#e8e8e8',
+  gray: '#6a6a7a',
+  lightGray: '#a8a8b8',
+  skin: '#f0c8a0',
+  brown: '#6e4930',
+  purple: '#6a3a8a',
+  orange: '#d4853a',
+  teal: '#3a8a7a',
+  wizardBlue: '#4a90d9',
+  wizardGold: '#f4d03f',
+};
+
+// ========== CHIPTUNE AUDIO ENGINE ==========
+let audioCtx = null;
+let currentMusic = null;
+let musicGain = null;
+let musicPlaying = false;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = 0.12;
+    musicGain.connect(audioCtx.destination);
+  }
+  // Resume if suspended (browser autoplay policy)
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+// Play a single chiptune note
+function playNote(freq, duration, type = 'square', gainVal = 0.1, delay = 0) {
+  if (!audioCtx || audioCtx.state === 'suspended') return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(gainVal, audioCtx.currentTime + delay);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(audioCtx.currentTime + delay);
+  osc.stop(audioCtx.currentTime + delay + duration);
+}
+
+// Play SFX
+function playSfxStep() {
+  playNote(200 + Math.random() * 60, 0.05, 'square', 0.03);
+}
+
+function playSfxInteract() {
+  playNote(440, 0.08, 'square', 0.08);
+  playNote(660, 0.08, 'square', 0.08, 0.08);
+}
+
+function playSfxQuizSelect() {
+  playNote(330, 0.06, 'square', 0.06);
+}
+
+function playSfxQuizConfirm() {
+  playNote(440, 0.1, 'square', 0.1);
+  playNote(554, 0.1, 'square', 0.1, 0.1);
+  playNote(660, 0.15, 'square', 0.1, 0.2);
+}
+
+function playSfxTransition() {
+  for (let i = 0; i < 8; i++) {
+    playNote(200 + i * 50, 0.15, 'triangle', 0.06, i * 0.06);
+  }
+}
+
+// ========== ZONE MUSIC LOOPS ==========
+// Each zone gets a distinct mood via looping arpeggios
+
+let musicInterval = null;
+
+function stopMusic() {
+  if (musicInterval) {
+    clearInterval(musicInterval);
+    musicInterval = null;
+  }
+  musicPlaying = false;
+}
+
+function startZoneMusic(zone) {
+  stopMusic();
+  if (!audioCtx) return;
+  musicPlaying = true;
+
+  const bpm = [110, 90, 100, 70, 60][zone] || 100;
+  const interval = (60 / bpm) * 1000 / 2; // eighth notes
+  let step = 0;
+
+  // Zone 0: Uncertainville — curious, hopeful, simple melody
+  const melodies = [
+    // Uncertainville: C major arpeggio, gentle & wondering
+    { notes: [262, 330, 392, 330, 262, 294, 349, 294, 262, 330, 392, 440, 392, 330, 294, 262],
+      type: 'square', gain: 0.05, bass: [131, 131, 147, 147, 131, 131, 147, 147, 131, 131, 147, 147, 165, 165, 131, 131] },
+    // Media Swamp: dissonant, tense, minor key with chromatic tension
+    { notes: [220, 233, 262, 233, 220, 208, 196, 208, 220, 262, 277, 262, 233, 220, 208, 196],
+      type: 'sawtooth', gain: 0.04, bass: [110, 110, 104, 104, 110, 110, 98, 98, 110, 110, 104, 104, 98, 98, 110, 110] },
+    // Opinion Forest: chaotic, shifting between keys, slightly comedic
+    { notes: [294, 330, 370, 330, 294, 349, 392, 349, 330, 370, 294, 262, 294, 330, 370, 392],
+      type: 'square', gain: 0.05, bass: [147, 147, 165, 165, 175, 175, 147, 147, 165, 165, 147, 147, 131, 131, 147, 147] },
+    // Worry Mountains: slow, haunting, minor with sustained feel
+    { notes: [196, 0, 233, 0, 220, 0, 196, 0, 175, 0, 196, 0, 220, 0, 233, 0],
+      type: 'triangle', gain: 0.06, bass: [98, 0, 110, 0, 98, 0, 88, 0, 98, 0, 110, 0, 98, 0, 88, 0] },
+    // Wizard Tower: warm, magical, resolving, major with sparkle
+    { notes: [330, 392, 494, 392, 330, 440, 524, 440, 330, 392, 494, 587, 524, 494, 440, 392],
+      type: 'triangle', gain: 0.06, bass: [165, 165, 196, 196, 220, 220, 196, 196, 165, 165, 196, 196, 220, 220, 165, 165] },
+  ];
+
+  const m = melodies[zone] || melodies[0];
+
+  musicInterval = setInterval(() => {
+    if (!musicPlaying) return;
+    const noteFreq = m.notes[step % m.notes.length];
+    const bassFreq = m.bass[step % m.bass.length];
+    if (noteFreq > 0) {
+      playNote(noteFreq, interval / 1000 * 1.5, m.type, m.gain);
+    }
+    if (bassFreq > 0) {
+      playNote(bassFreq, interval / 1000 * 2, 'triangle', m.gain * 0.6);
+    }
+    step++;
+  }, interval);
+}
+
+// ========== GAME STATE ==========
+let gameState = 'title'; // title, playing, dialogue, quiz, transition, ending
+let currentZone = 0;
+let player = { x: 7, y: 12, dir: 0, frame: 0, moving: false };
+let dialogueQueue = [];
+let currentDialogue = null;
+let dialogueCharIndex = 0;
+let dialogueTimer = 0;
+let quizData = null;
+let quizSelection = 0;
+let quizAnswers = [];
+let transitionAlpha = 0;
+let transitionDir = 0; // 0=none, 1=fadeOut, 2=fadeIn
+let transitionCallback = null;
+let titleSelection = 0;
+let endingPhase = 0;
+let endingTimer = 0;
+let npcs = [];
+let frameCount = 0;
+let keysDown = {};
+let moveTimer = 0;
+let interactCooldown = 0;
+
+// Life stage labels
+const LIFE_STAGES = [
+  "Just starting out (20s-30s)",
+  "Building & growing (30s-40s)",
+  "Protecting what I've built (50s+)"
+];
+
+// ========== ZONE DEFINITIONS ==========
+const ZONES = [
+  // Zone 0: Uncertainville
+  {
+    name: "Uncertainville",
+    bgColor: '#1a1a2e',
+    music: null,
+    map: null, // generated procedurally
+    playerStart: { x: 7, y: 12 },
+    exitTile: { x: 7, y: 1 },
+    introDialogue: [
+      "You wake up in UNCERTAINVILLE.",
+      "You know you need a plan for\nyour money... but where do\nyou even start?",
+      "The world ahead is full of\nnoise. Find your way through.",
+      "HEAD NORTH to begin your\njourney. Talk to people with\nSPACE or ENTER."
+    ],
+    npcs: [
+      { x: 5, y: 8, type: 'villager', lines: ["Everyone says something\ndifferent about money...", "I just want someone to tell\nme the truth."] },
+      { x: 10, y: 10, type: 'villager', lines: ["I heard you should save 20%\nof your income. Or was it 15?\nOr 30%?"] },
+      { x: 3, y: 5, type: 'sign', lines: ["NORTH: The unknown path\n\nYour financial journey awaits."] },
+    ]
+  },
+  // Zone 1: The Media Swamp
+  {
+    name: "The Media Swamp",
+    bgColor: '#1a2e1a',
+    playerStart: { x: 7, y: 13 },
+    exitTile: { x: 7, y: 1 },
+    introDialogue: [
+      "You enter THE MEDIA SWAMP.",
+      "Screens and headlines scream\nfrom every direction...",
+      "Don't let the noise\noverwhelm you."
+    ],
+    npcs: [
+      { x: 3, y: 9, type: 'tv', lines: ["BREAKING: MARKET CRASH\nIMMINENT! SELL EVERYTHING!"] },
+      { x: 11, y: 7, type: 'tv', lines: ["EXPERT WARNS: You're NOT\nsaving enough for retirement!"] },
+      { x: 6, y: 5, type: 'tv', lines: ["HOT STOCK TIP: This one\nweird trick will 10X your\nportfolio!"] },
+      { x: 9, y: 11, type: 'tv', lines: ["RECESSION WARNING: Is your\nmoney SAFE? Probably not!"] },
+      { x: 4, y: 4, type: 'reporter', lines: ["I get paid more when you're\nscared. Nothing personal."] },
+    ],
+    quiz: {
+      trigger: { x: 7, y: 3 },
+      question: "When you see a scary headline\nabout the markets, you...",
+      options: [
+        "Panic and want to sell",
+        "Feel anxious but hold steady",
+        "Ignore it completely",
+        "Research before reacting"
+      ]
+    }
+  },
+  // Zone 2: The Opinion Forest
+  {
+    name: "The Opinion Forest",
+    bgColor: '#2e2a1a',
+    playerStart: { x: 7, y: 13 },
+    exitTile: { x: 7, y: 1 },
+    introDialogue: [
+      "You wander into\nTHE OPINION FOREST.",
+      "Everyone here is an expert.\nJust ask them.",
+    ],
+    npcs: [
+      { x: 4, y: 10, type: 'coworker', lines: ["My brother-in-law made a\nkilling on crypto. You should\nput everything in Bitcoin."] },
+      { x: 10, y: 8, type: 'family', lines: ["Your father and I just think\nyou should buy a house.\nRenting is throwing money away."] },
+      { x: 3, y: 5, type: 'friend', lines: ["Dude, index funds. That's it.\nAnyone who says otherwise is\ntrying to sell you something."] },
+      { x: 11, y: 4, type: 'coworker', lines: ["I don't trust ANY financial\nadvisor. They're all crooks.\nJust do it yourself."] },
+      { x: 7, y: 7, type: 'friend', lines: ["Have you tried that app?\nIt basically replaces a\nfinancial planner. For free!"] },
+    ],
+    quiz: {
+      trigger: { x: 7, y: 3 },
+      question: "When everyone gives you\nconflicting advice, you...",
+      options: [
+        "Go with whoever sounds most confident",
+        "Do nothing — too overwhelmed",
+        "Try to research it yourself",
+        "Wish I had a trusted guide"
+      ]
+    }
+  },
+  // Zone 3: The Worry Mountains
+  {
+    name: "The Worry Mountains",
+    bgColor: '#1a1a2e',
+    playerStart: { x: 7, y: 13 },
+    exitTile: { x: 7, y: 1 },
+    introDialogue: [
+      "You climb into\nTHE WORRY MOUNTAINS.",
+      "It's quieter here.\nThe noise is replaced by\nyour own thoughts...",
+    ],
+    npcs: [
+      { x: 4, y: 9, type: 'thought', lines: ["What if I make the wrong\nchoice and it costs my\nfamily everything?"] },
+      { x: 10, y: 7, type: 'thought', lines: ["My kids are counting on me.\nWhat if I'm not doing\nenough?"] },
+      { x: 6, y: 4, type: 'thought', lines: ["I'm already behind.\nEveryone else seems to have\nit figured out..."] },
+      { x: 9, y: 11, type: 'thought', lines: ["What if I trust the wrong\nperson with my money?"] },
+      { x: 3, y: 6, type: 'thought', lines: ["Am I the only one who feels\ncompletely lost?"] },
+    ],
+    quiz: {
+      trigger: { x: 7, y: 3 },
+      question: "What worries you most about\nyour financial future?",
+      options: [
+        "Not having enough to retire",
+        "Something happening to me or my family",
+        "Making a costly mistake",
+        "Not knowing who to trust"
+      ]
+    }
+  },
+  // Zone 4: The Wizard's Tower
+  {
+    name: "The Iconoclastic Guide",
+    bgColor: '#0e0e2a',
+    playerStart: { x: 7, y: 13 },
+    exitTile: null,
+    introDialogue: [
+      "A warm light glows ahead...",
+      "You've walked through the\nnoise, the opinions, and\nyour own doubts.",
+      "Not everyone makes it\nthis far. But you did.",
+    ],
+    npcs: [
+      { x: 4, y: 9, type: 'sign', lines: ["You don't have to figure\nthis out alone."] },
+      { x: 10, y: 9, type: 'sign', lines: ["No commissions. No agenda.\nJust your best interest."] },
+    ],
+    wizard: { x: 7, y: 5 }
+  }
+];
+
+// ========== SPRITE SHEET SYSTEM ==========
+const SPRITE_DATA = {
+  'player': 'data:image/png;base64,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',
+  'villager': 'data:image/png;base64,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',
+  'coworker': 'data:image/png;base64,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',
+  'reporter': 'data:image/png;base64,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',
+  'wizard': 'data:image/png;base64,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',
+  'family': 'data:image/png;base64,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',
+  'friend': 'data:image/png;base64,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'
+};
+
+const SPRITE_IMAGES = {};
+let spritesLoaded = false;
+let spritesLoadedCount = 0;
+const SPRITES_TOTAL = 7;
+
+// Character types that use sprite sheets
+const SPRITE_TYPES = new Set(['player', 'villager', 'coworker', 'reporter', 'wizard', 'family', 'friend']);
+
+function loadSprites() {
+  for (const [type, dataUrl] of Object.entries(SPRITE_DATA)) {
+    const img = new Image();
+    img.onload = function() {
+      SPRITE_IMAGES[type] = img;
+      spritesLoadedCount++;
+      if (spritesLoadedCount >= SPRITES_TOTAL) spritesLoaded = true;
+    };
+    img.src = dataUrl;
+  }
+}
+loadSprites();
+
+// Sprite sheet layout (32x32 per frame):
+// Row 0: Walk Down (4 frames)
+// Row 1: Walk Right (6 frames) - flip for Left
+// Row 2: Walk Up (3 frames)
+// Row 3: Idle/Facing Down (3 frames)
+// Row 4: Special/Death (4 frames)
+const SF = 32; // sprite frame size
+const ANIM_MAP = {
+  down:  { row: 0, frames: 4 },
+  right: { row: 1, frames: 6 },
+  left:  { row: 1, frames: 6, flip: true },
+  up:    { row: 2, frames: 3 },
+  idle:  { row: 3, frames: 3 },
+};
+const DIR_ANIM = ['down', 'up', 'left', 'right'];
+
+// Character scale: 2x means 64px drawn from a 32px sprite
+const CHAR_SCALE = 2;
+const CHAR_SIZE = SF * CHAR_SCALE; // 64px
+
+function drawCharacterSprite(x, y, type, dir, frame, isMoving) {
+  const img = SPRITE_IMAGES[type];
+  if (!img) return; // not loaded yet
+
+  const px = x * TILE;
+  const py = y * TILE;
+
+  // Anchor at feet: character's feet align to the bottom of their tile
+  // So we offset upward by (CHAR_SIZE - TILE) and center horizontally
+  const drawX = px + (TILE - CHAR_SIZE) / 2; // center horizontally on tile
+  const drawY = py + TILE - CHAR_SIZE;         // feet at bottom of tile
+
+  // Draw shadow under character (on the tile)
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(px + TILE / 2, py + TILE - 2, 14, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Pick animation
+  let animKey;
+  if (!isMoving && type !== 'player') {
+    animKey = 'idle';
+  } else if (!isMoving) {
+    animKey = 'idle';
+  } else {
+    animKey = DIR_ANIM[dir] || 'down';
+  }
+
+  const anim = ANIM_MAP[animKey];
+  const animFrame = Math.floor(frame / 10) % anim.frames;
+
+  const sx = animFrame * SF;
+  const sy = anim.row * SF;
+
+  ctx.save();
+  if (anim.flip) {
+    // Flip: translate to right edge of draw area, then scale -1
+    ctx.translate(drawX + CHAR_SIZE, drawY);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, sx, sy, SF, SF, 0, 0, CHAR_SIZE, CHAR_SIZE);
+  } else {
+    ctx.drawImage(img, sx, sy, SF, SF, drawX, drawY, CHAR_SIZE, CHAR_SIZE);
+  }
+  ctx.restore();
+}
+
+// ========== PIXEL ART SPRITE DRAWING (objects only) ==========
+function drawSprite(x, y, type, dir, frame) {
+  // Character types use real sprite sheets
+  if (SPRITE_TYPES.has(type)) {
+    const isMoving = (type === 'player') ? player.moving : false;
+    drawCharacterSprite(x, y, type, dir, frame, isMoving);
+    return;
+  }
+
+  // Non-character objects use pixel art
+  const px = x * TILE;
+  const py = y * TILE;
+
+  if (type === 'tv') {
+    ctx.fillStyle = '#3a3a4a';
+    ctx.fillRect(px + 4, py + 4, 24, 20);
+    ctx.fillStyle = (frameCount % 30 < 15) ? '#ff4444' : '#ff8844';
+    ctx.fillRect(px + 6, py + 6, 20, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(px + 6, py + 6 + i * 4 + (frameCount % 3), 20, 2);
+    }
+    ctx.fillStyle = '#3a3a4a';
+    ctx.fillRect(px + 12, py + 24, 8, 4);
+    ctx.fillRect(px + 10, py, 2, 6);
+    ctx.fillRect(px + 20, py, 2, 6);
+    ctx.fillStyle = PAL.red;
+    ctx.font = '12px "Press Start 2P"';
+    ctx.fillText('!', px + 14, py);
+  }
+  else if (type === 'thought') {
+    const bob = Math.sin(frameCount * 0.05 + x + y) * 4;
+    ctx.fillStyle = 'rgba(180,180,220,0.6)';
+    ctx.beginPath();
+    ctx.arc(px + 16, py + 12 + bob, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(140,140,180,0.8)';
+    ctx.beginPath();
+    ctx.arc(px + 16, py + 12 + bob, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PAL.white;
+    ctx.fillRect(px + 10, py + 12 + bob, 2, 2);
+    ctx.fillRect(px + 16, py + 12 + bob, 2, 2);
+    ctx.fillRect(px + 22, py + 12 + bob, 2, 2);
+  }
+  else if (type === 'sign') {
+    ctx.fillStyle = PAL.brown;
+    ctx.fillRect(px + 14, py + 16, 4, 14);
+    ctx.fillStyle = PAL.accent;
+    ctx.fillRect(px + 4, py + 6, 24, 12);
+    ctx.fillStyle = PAL.dark;
+    ctx.fillRect(px + 6, py + 8, 20, 8);
+    ctx.fillStyle = PAL.white;
+    ctx.fillRect(px + 10, py + 10, 2, 2);
+    ctx.fillRect(px + 14, py + 10, 2, 2);
+    ctx.fillRect(px + 18, py + 10, 2, 2);
+  }
+}
+
+// ========== MAP DRAWING ==========
+function drawZoneBackground(zone) {
+  const z = ZONES[zone];
+
+  if (zone === 0) {
+    // Uncertainville - small village
+    ctx.fillStyle = '#2a3a2a';
+    ctx.fillRect(0, 0, W, H);
+    // Grass variation
+    for (let x = 0; x < COLS; x++) {
+      for (let y = 0; y < ROWS; y++) {
+        const hash = (x * 7 + y * 13) % 5;
+        ctx.fillStyle = hash === 0 ? '#2e4e2e' : hash === 1 ? '#264226' : '#2a3a2a';
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    // Path (vertical road)
+    for (let y = 0; y < ROWS; y++) {
+      ctx.fillStyle = '#5a5040';
+      ctx.fillRect(6 * TILE, y * TILE, 3 * TILE, TILE);
+      ctx.fillStyle = '#4a4030';
+      ctx.fillRect(6 * TILE + 2, y * TILE + 6, TILE - 4, 2);
+    }
+    // Houses
+    drawHouse(1, 7);
+    drawHouse(11, 9);
+    drawHouse(1, 11);
+    // Trees
+    drawTree(0, 2); drawTree(13, 3); drawTree(0, 5);
+    drawTree(12, 6); drawTree(14, 1); drawTree(0, 0);
+    drawTree(13, 0); drawTree(11, 2);
+    // Exit indicator
+    drawExitArrow(7, 0);
+  }
+  else if (zone === 1) {
+    // Media Swamp
+    ctx.fillStyle = '#1a2a1a';
+    ctx.fillRect(0, 0, W, H);
+    for (let x = 0; x < COLS; x++) {
+      for (let y = 0; y < ROWS; y++) {
+        const hash = (x * 11 + y * 7 + frameCount * 0.01) % 4;
+        ctx.fillStyle = hash < 1 ? '#1e2e1a' : hash < 2 ? '#1a2a18' : '#1c2c1c';
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        // Swamp bubbles
+        if ((x * 3 + y * 17) % 23 === 0 && frameCount % 60 < 10) {
+          ctx.fillStyle = 'rgba(100,150,100,0.3)';
+          ctx.beginPath();
+          ctx.arc(x * TILE + 16, y * TILE + 16, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    // Path
+    for (let y = 0; y < ROWS; y++) {
+      ctx.fillStyle = '#3a3a30';
+      ctx.fillRect(6 * TILE, y * TILE, 3 * TILE, TILE);
+    }
+    // Cables/wires
+    ctx.strokeStyle = '#4a4a4a';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 60 + i * 100);
+      ctx.lineTo(W, 80 + i * 100);
+      ctx.stroke();
+    }
+    drawExitArrow(7, 0);
+  }
+  else if (zone === 2) {
+    // Opinion Forest
+    ctx.fillStyle = '#2a2a1a';
+    ctx.fillRect(0, 0, W, H);
+    for (let x = 0; x < COLS; x++) {
+      for (let y = 0; y < ROWS; y++) {
+        const hash = (x * 13 + y * 9) % 4;
+        ctx.fillStyle = hash === 0 ? '#2e2e1e' : hash === 1 ? '#262618' : '#2a2a1a';
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    // Path
+    for (let y = 0; y < ROWS; y++) {
+      ctx.fillStyle = '#4a4030';
+      ctx.fillRect(6 * TILE, y * TILE, 3 * TILE, TILE);
+    }
+    // Dense trees
+    drawTree(0, 1); drawTree(1, 3); drawTree(0, 6); drawTree(1, 9);
+    drawTree(0, 12); drawTree(12, 0); drawTree(13, 2); drawTree(14, 5);
+    drawTree(12, 8); drawTree(13, 11); drawTree(14, 13);
+    drawTree(2, 0); drawTree(12, 13);
+    drawExitArrow(7, 0);
+  }
+  else if (zone === 3) {
+    // Worry Mountains
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, W, H);
+    for (let x = 0; x < COLS; x++) {
+      for (let y = 0; y < ROWS; y++) {
+        const hash = (x * 5 + y * 11) % 5;
+        ctx.fillStyle = hash < 2 ? '#1e1e32' : hash < 4 ? '#1a1a2e' : '#22223a';
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    // Mountain peaks in background
+    ctx.fillStyle = '#2a2a4a';
+    for (let i = 0; i < 5; i++) {
+      const mx = i * 110 + 20;
+      ctx.beginPath();
+      ctx.moveTo(mx - 50, 160);
+      ctx.lineTo(mx, 20 + i * 10);
+      ctx.lineTo(mx + 50, 160);
+      ctx.fill();
+    }
+    // Snow caps
+    ctx.fillStyle = '#8888aa';
+    for (let i = 0; i < 5; i++) {
+      const mx = i * 110 + 20;
+      ctx.beginPath();
+      ctx.moveTo(mx - 16, 50 + i * 10);
+      ctx.lineTo(mx, 20 + i * 10);
+      ctx.lineTo(mx + 16, 50 + i * 10);
+      ctx.fill();
+    }
+    // Path
+    for (let y = 5; y < ROWS; y++) {
+      ctx.fillStyle = '#3a3a50';
+      ctx.fillRect(6 * TILE, y * TILE, 3 * TILE, TILE);
+    }
+    drawExitArrow(7, 0);
+  }
+  else if (zone === 4) {
+    // Wizard's Tower
+    ctx.fillStyle = '#0e0e2a';
+    ctx.fillRect(0, 0, W, H);
+    // Starfield
+    for (let i = 0; i < 30; i++) {
+      const sx = (i * 37 + frameCount * 0.1) % W;
+      const sy = (i * 53) % H;
+      const brightness = Math.sin(frameCount * 0.02 + i) * 0.3 + 0.7;
+      ctx.fillStyle = `rgba(255,255,255,${brightness * 0.6})`;
+      ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
+    }
+    // Tower base
+    ctx.fillStyle = '#2a2a5a';
+    ctx.fillRect(4 * TILE, 2 * TILE, 7 * TILE, 8 * TILE);
+    ctx.fillStyle = '#22224a';
+    ctx.fillRect(5 * TILE, 1 * TILE, 5 * TILE, 1 * TILE);
+    ctx.fillStyle = '#1a1a3a';
+    ctx.fillRect(6 * TILE, 0, 3 * TILE, 1 * TILE);
+    // Door
+    ctx.fillStyle = '#4a3a2a';
+    ctx.fillRect(6 * TILE + 8, 9 * TILE, 2 * TILE + 16, 1 * TILE);
+    // Windows with warm light
+    const glowAlpha = Math.sin(frameCount * 0.03) * 0.15 + 0.6;
+    ctx.fillStyle = `rgba(244, 208, 63, ${glowAlpha})`;
+    ctx.fillRect(5 * TILE + 8, 4 * TILE, 16, 16);
+    ctx.fillRect(9 * TILE + 8, 4 * TILE, 16, 16);
+    ctx.fillRect(7 * TILE + 4, 3 * TILE, 20, 16);
+    // Warm light path
+    ctx.fillStyle = `rgba(244, 208, 63, 0.05)`;
+    for (let y = 10; y < ROWS; y++) {
+      ctx.fillRect(5 * TILE, y * TILE, 5 * TILE, TILE);
+    }
+    // Ground path
+    ctx.fillStyle = '#2a2a3a';
+    for (let y = 10; y < ROWS; y++) {
+      ctx.fillRect(6 * TILE, y * TILE, 3 * TILE, TILE);
+    }
+  }
+}
+
+function drawHouse(x, y) {
+  ctx.fillStyle = '#6a5a4a';
+  ctx.fillRect(x * TILE, y * TILE, 2 * TILE, 2 * TILE);
+  ctx.fillStyle = '#8a3a2a';
+  ctx.fillRect(x * TILE - 4, (y - 1) * TILE + 16, 2 * TILE + 8, TILE);
+  // Door
+  ctx.fillStyle = '#4a3a2a';
+  ctx.fillRect(x * TILE + 10, y * TILE + TILE, 12, TILE);
+  // Window
+  ctx.fillStyle = PAL.accent;
+  ctx.fillRect(x * TILE + TILE + 8, y * TILE + 8, 12, 10);
+}
+
+function drawTree(x, y) {
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(x * TILE + 12, y * TILE + 18, 8, 12);
+  ctx.fillStyle = '#2a5a2a';
+  ctx.fillRect(x * TILE + 4, y * TILE + 4, 24, 16);
+  ctx.fillStyle = '#3a6a3a';
+  ctx.fillRect(x * TILE + 8, y * TILE, 16, 12);
+}
+
+function drawExitArrow(x, y) {
+  const blink = frameCount % 40 < 25;
+  if (blink) {
+    ctx.fillStyle = PAL.accent;
+    ctx.fillRect(x * TILE + 10, y * TILE + 4, 12, 4);
+    ctx.fillRect(x * TILE + 12, y * TILE, 8, 4);
+    ctx.fillRect(x * TILE + 14, y * TILE - 2, 4, 2);
+  }
+}
+
+// ========== COLLISION ==========
+function isWalkable(x, y) {
+  if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return false;
+  // Check NPCs
+  for (const npc of npcs) {
+    if (npc.x === x && npc.y === y) return false;
+  }
+  // Zone-specific walls
+  if (currentZone === 0) {
+    // Houses block
+    if ((x >= 1 && x <= 2 && y >= 7 && y <= 8) ||
+        (x >= 11 && x <= 12 && y >= 9 && y <= 10) ||
+        (x >= 1 && x <= 2 && y >= 11 && y <= 12)) return false;
+    // Trees block
+    const trees = [[0,2],[13,3],[0,5],[12,6],[14,1],[0,0],[13,0],[11,2]];
+    for (const t of trees) { if (t[0] === x && t[1] === y) return false; }
+  }
+  else if (currentZone === 2) {
+    const trees = [[0,1],[1,3],[0,6],[1,9],[0,12],[12,0],[13,2],[14,5],[12,8],[13,11],[14,13],[2,0],[12,13]];
+    for (const t of trees) { if (t[0] === x && t[1] === y) return false; }
+  }
+  else if (currentZone === 4) {
+    // Outside tower - walkable open area
+    // Tower occupies x:4-10, y:2-9
+    // Walls: top row y=2, left col x=4, right col x=10, bottom row y=9 (except door)
+    // Interior: x:5-9, y:3-8 = walkable
+    // Door: x:6-8, y:9 = walkable
+
+    // Tower walls block
+    const inTowerBounds = (x >= 4 && x <= 10 && y >= 2 && y <= 9);
+    if (inTowerBounds) {
+      // Door opening
+      if (x >= 6 && x <= 8 && y === 9) return true;
+      // Interior is walkable
+      if (x >= 5 && x <= 9 && y >= 3 && y <= 8) {
+        // Wizard blocks
+        const wiz = ZONES[4].wizard;
+        if (wiz && x === wiz.x && y === wiz.y) return false;
+        return true;
+      }
+      // Everything else in tower bounds is wall
+      return false;
+    }
+    // Outside tower bounds at y < 10 on far sides - walkable
+  }
+  return true;
+}
+
+// ========== DIALOGUE SYSTEM ==========
+function showDialogue(lines) {
+  dialogueQueue = [...lines];
+  advanceDialogue();
+}
+
+function advanceDialogue() {
+  if (currentDialogue && dialogueCharIndex < currentDialogue.length) {
+    dialogueCharIndex = currentDialogue.length;
+    return;
+  }
+  if (dialogueQueue.length > 0) {
+    currentDialogue = dialogueQueue.shift();
+    dialogueCharIndex = 0;
+    dialogueTimer = 0;
+    gameState = 'dialogue';
+  } else {
+    currentDialogue = null;
+    // During wizard interaction, stay in dialogue state so interact() can advance phases
+    if (currentZone === 4 && wizardPhase > 0 && wizardPhase < 5) {
+      gameState = 'dialogue';
+    } else {
+      gameState = 'playing';
+    }
+  }
+}
+
+function drawDialogueBox() {
+  if (!currentDialogue) {
+    // In wizard flow, show a continue prompt
+    if (currentZone === 4 && wizardPhase > 0 && wizardPhase < 5 && gameState === 'dialogue') {
+      ctx.fillStyle = 'rgba(0,0,0,0.9)';
+      ctx.fillRect(8, H - 120, W - 16, 112);
+      ctx.strokeStyle = PAL.wizardGold;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(10, H - 118, W - 20, 108);
+      ctx.fillStyle = PAL.lightGray;
+      ctx.font = '11px "Press Start 2P"';
+      ctx.fillText('...', 24, H - 70);
+      const blink = frameCount % 30 < 20;
+      if (blink) {
+        ctx.fillStyle = PAL.accent;
+        ctx.fillRect(W - 36, H - 20, 10, 10);
+      }
+    }
+    return;
+  }
+
+  // Box
+  ctx.fillStyle = 'rgba(0,0,0,0.9)';
+  ctx.fillRect(8, H - 120, W - 16, 112);
+  ctx.strokeStyle = PAL.white;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(10, H - 118, W - 20, 108);
+
+  // Wizard portrait during wizard dialogue
+  let textOffset = 24;
+  if (currentZone === 4 && wizardPhase > 0) {
+    const wizPortrait = SPRITE_IMAGES['wizard'];
+    if (wizPortrait) {
+      ctx.strokeStyle = PAL.wizardGold;
+      ctx.strokeRect(10, H - 118, 52, 52);
+      ctx.drawImage(wizPortrait, 0, 3 * 32, 32, 32, 12, H - 116, 48, 48);
+      textOffset = 70;
+    }
+    ctx.strokeStyle = PAL.wizardGold;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, H - 118, W - 20, 108);
+  }
+
+  // Text
+  const shown = currentDialogue.substring(0, dialogueCharIndex);
+  ctx.fillStyle = PAL.white;
+  ctx.font = '13px "Press Start 2P"';
+  const lines = shown.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], textOffset, H - 90 + i * 24);
+  }
+
+  // Advance indicator
+  if (dialogueCharIndex >= currentDialogue.length) {
+    const blink = frameCount % 30 < 20;
+    if (blink) {
+      ctx.fillStyle = PAL.accent;
+      ctx.fillRect(W - 36, H - 20, 10, 10);
+    }
+  }
+
+  // Auto-advance text
+  dialogueTimer++;
+  if (dialogueTimer % 2 === 0 && dialogueCharIndex < currentDialogue.length) {
+    dialogueCharIndex++;
+  }
+}
+
+// ========== QUIZ SYSTEM ==========
+function showQuiz(quiz) {
+  quizData = quiz;
+  quizSelection = 0;
+  gameState = 'quiz';
+}
+
+function drawQuiz() {
+  const qd = (currentZone === 4 && wizardQuizData) ? wizardQuizData : quizData;
+  if (!qd) return;
+
+  // Overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.92)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Question
+  ctx.fillStyle = PAL.accent;
+  ctx.font = '13px "Press Start 2P"';
+  const qLines = qd.question.split('\n');
+  for (let i = 0; i < qLines.length; i++) {
+    ctx.fillText(qLines[i], 24, 60 + i * 24);
+  }
+
+  // Options
+  const startY = 140;
+  for (let i = 0; i < qd.options.length; i++) {
+    const selected = i === quizSelection;
+    ctx.fillStyle = selected ? PAL.accent : PAL.gray;
+    ctx.font = '11px "Press Start 2P"';
+    const prefix = selected ? '► ' : '  ';
+    ctx.fillText(prefix + qd.options[i], 24, startY + i * 52);
+
+    if (selected) {
+      ctx.fillStyle = 'rgba(226,183,20,0.1)';
+      ctx.fillRect(16, startY + i * 52 - 16, W - 32, 30);
+    }
+  }
+
+  // Instructions
+  ctx.fillStyle = PAL.lightGray;
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillText('↑↓ choose  SPACE select', 16, H - 24);
+}
+
+function selectQuizAnswer() {
+  quizAnswers.push({
+    question: quizData.question,
+    answer: quizData.options[quizSelection],
+    index: quizSelection
+  });
+  quizData = null;
+  gameState = 'playing';
+  // Transition to next zone
+  startTransition(() => {
+    currentZone++;
+    setupZone();
+  });
+}
+
+// ========== TRANSITIONS ==========
+function startTransition(callback) {
+  transitionAlpha = 0;
+  transitionDir = 1;
+  transitionCallback = callback;
+  gameState = 'transition';
+  playSfxTransition();
+  stopMusic();
+}
+
+function updateTransition() {
+  if (transitionDir === 1) {
+    transitionAlpha += 0.04;
+    if (transitionAlpha >= 1) {
+      transitionAlpha = 1;
+      transitionDir = 2;
+      if (transitionCallback) transitionCallback();
+    }
+  } else if (transitionDir === 2) {
+    transitionAlpha -= 0.04;
+    if (transitionAlpha <= 0) {
+      transitionAlpha = 0;
+      transitionDir = 0;
+      gameState = 'playing';
+      startZoneMusic(currentZone);
+      // Show intro dialogue for new zone
+      const z = ZONES[currentZone];
+      if (z.introDialogue) {
+        showDialogue(z.introDialogue);
+      }
+    }
+  }
+}
+
+function drawTransition() {
+  ctx.fillStyle = `rgba(0,0,0,${transitionAlpha})`;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ========== TITLE SCREEN ==========
+function drawTitleScreen() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 37 + Math.sin(frameCount * 0.01 + i) * 10) % W;
+    const sy = (i * 53 + Math.cos(frameCount * 0.01 + i) * 6) % H;
+    ctx.fillStyle = `rgba(255,255,255,${Math.sin(frameCount * 0.03 + i) * 0.3 + 0.5})`;
+    ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
+  }
+
+  // Title
+  ctx.fillStyle = PAL.wizardGold;
+  ctx.font = '20px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillText('ICONOCLAST', W / 2, 100);
+  ctx.fillStyle = PAL.white;
+  ctx.font = '14px "Press Start 2P"';
+  ctx.fillText('Find Your Guide', W / 2, 140);
+
+  // Wizard preview (centered, larger)
+  ctx.textAlign = 'left';
+  const wizImgTitle = SPRITE_IMAGES['wizard'];
+  if (wizImgTitle) {
+    const ws = 64; // 2x scale
+    const bob = Math.sin(frameCount * 0.03) * 3;
+    // Glow behind wizard
+    const gAlpha = Math.sin(frameCount * 0.02) * 0.08 + 0.15;
+    ctx.fillStyle = `rgba(244, 208, 63, ${gAlpha})`;
+    ctx.beginPath();
+    ctx.arc(W/2, 180 + bob, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.drawImage(wizImgTitle, 0, 3 * 32, 32, 32, W/2 - ws/2, 148 + bob, ws, ws);
+  } else {
+    drawSprite(7, 5, 'wizard', 0, 0);
+  }
+
+  // Life stage selection
+  ctx.fillStyle = PAL.accent;
+  ctx.font = '12px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillText("Who are you?", W / 2, 270);
+
+  for (let i = 0; i < LIFE_STAGES.length; i++) {
+    const selected = i === titleSelection;
+    ctx.fillStyle = selected ? PAL.wizardGold : PAL.gray;
+    const prefix = selected ? '► ' : '  ';
+    ctx.font = '10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(prefix + LIFE_STAGES[i], W / 2, 310 + i * 36);
+  }
+
+  ctx.fillStyle = PAL.lightGray;
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillText('↑↓ choose  SPACE start', W / 2, H - 30);
+
+  ctx.textAlign = 'left';
+}
+
+// ========== INTERACTIVE WIZARD SYSTEM ==========
+let wizardPhase = 0;
+let wizardAnswers = [];
+let wizardQuizData = null;
+
+function triggerEnding() {
+  wizardPhase = 1;
+  wizardAnswers = [];
+  stopMusic();
+  // Magical reveal sound
+  for (let i = 0; i < 12; i++) {
+    playNote(330 + i * 40, 0.3, 'triangle', 0.05, i * 0.08);
+  }
+  showDialogue([
+    "...",
+    "I've watched your journey.",
+    "Before I share what I see,\nlet me ask you two things."
+  ]);
+  gameState = 'dialogue';
+}
+
+function advanceWizardPhase() {
+  wizardPhase++;
+
+  if (wizardPhase === 2) {
+    // Wizard Question 1
+    wizardQuizData = {
+      question: "What keeps you up at night\nabout your finances?",
+      options: [
+        "Not having enough to retire",
+        "Something happening to my family",
+        "Making a costly mistake",
+        "Not knowing who to trust"
+      ]
+    };
+    quizSelection = 0;
+    gameState = 'quiz';
+  }
+  else if (wizardPhase === 3) {
+    // Wizard Question 2
+    wizardQuizData = {
+      question: "What would help you\nmost right now?",
+      options: [
+        "Someone to organize the chaos",
+        "A plan I actually understand",
+        "Knowing my family is protected",
+        "Confidence I'm on the right path"
+      ]
+    };
+    quizSelection = 0;
+    gameState = 'quiz';
+  }
+  else if (wizardPhase === 4) {
+    // --- Build personalized guidance from ALL answers ---
+    // Life stage (from title): titleSelection 0/1/2
+    // Zone answers: quizAnswers[1..3] (media/opinion/worry)
+    // Wizard answers: wizardAnswers[0] (fear) wizardAnswers[1] (need)
+
+    const fear = wizardAnswers[0] || 0;
+    const need = wizardAnswers[1] || 0;
+
+    // Opening line based on life stage
+    let opener = "";
+    if (titleSelection === 0) opener = "You're early in the journey.\nThat's the best time to\nget it right.";
+    else if (titleSelection === 1) opener = "You're building something\nreal. A family, a career.\nThat takes a real plan.";
+    else opener = "You've earned what you have.\nNow it's about making sure\nit all works together.";
+
+    // Core insight based on fear
+    const fearInsights = [
+      "Retirement isn't scary when\nyou have a map. We've drawn\nhundreds of them.",
+      "Protecting the people who\ndepend on you isn't optional.\nIt's where we start.",
+      "The fear of a wrong move\nkeeps people frozen. That's\nworse than any mistake.",
+      "Trust is earned, not sold.\nWe're fee-only fiduciaries.\nWe answer only to you."
+    ];
+
+    // Actionable guidance based on need
+    const needGuidance = [
+      "We take the scattered pieces\nand build one clear picture.\nNo solo acts. No guessing.",
+      "Your plan won't need a\ndecoder ring. If you don't\nget it, we failed, not you.",
+      "We build the safety net\nfirst. Everything else is\nbuilt on that foundation.",
+      "A real plan built by people\nwho only answer to you\nreplaces doubt with clarity."
+    ];
+
+    // Play warm resolution sound
+    playNote(330, 0.3, 'triangle', 0.06);
+    playNote(440, 0.3, 'triangle', 0.06, 0.2);
+    playNote(524, 0.4, 'triangle', 0.06, 0.4);
+
+    showDialogue([
+      opener,
+      fearInsights[fear],
+      needGuidance[need],
+      "No commissions. No kickbacks.\nJust your best interest.",
+      "We're Iconoclastic Capital.\nLet's talk."
+    ]);
+    gameState = 'dialogue';
+  }
+  else if (wizardPhase >= 5) {
+    gameState = 'ending';
+    // Play final magical chord
+    playNote(262, 1.0, 'triangle', 0.05);
+    playNote(330, 1.0, 'triangle', 0.05);
+    playNote(392, 1.0, 'triangle', 0.05);
+    playNote(524, 1.0, 'triangle', 0.04);
+  }
+}
+
+function drawEndingCTA() {
+  ctx.fillStyle = 'rgba(10,10,26,0.95)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 37 + Math.sin(frameCount * 0.01 + i) * 10) % W;
+    const sy = (i * 53 + Math.cos(frameCount * 0.01 + i) * 6) % H;
+    ctx.fillStyle = `rgba(255,255,255,${Math.sin(frameCount * 0.03 + i) * 0.3 + 0.4})`;
+    ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, 2);
+  }
+
+  // Large warm glow behind wizard
+  const glow = Math.sin(frameCount * 0.02) * 0.08 + 0.2;
+  ctx.fillStyle = `rgba(244, 208, 63, ${glow})`;
+  ctx.beginPath();
+  ctx.arc(W / 2, 100, 70, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(74, 144, 217, ${glow * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(W / 2, 100, 90, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wizard (drawn larger for CTA)
+  const wizImg = SPRITE_IMAGES['wizard'];
+  if (wizImg) {
+    const wizSize = 96; // 3x scale
+    ctx.drawImage(wizImg, 0, 3 * 32, 32, 32, W/2 - wizSize/2, 52, wizSize, wizSize);
+  } else {
+    drawSprite(7, 2, 'wizard', 0, 0);
+  }
+
+  ctx.textAlign = 'center';
+
+  // Title
+  ctx.fillStyle = PAL.wizardGold;
+  ctx.font = '11px "Press Start 2P"';
+  ctx.fillText('THE ICONOCLASTIC GUIDE', W / 2, 175);
+
+  ctx.fillStyle = PAL.white;
+  ctx.font = '14px "Press Start 2P"';
+  ctx.fillText('Right here with you.', W / 2, 210);
+
+  // Subtitle
+  ctx.fillStyle = PAL.lightGray;
+  ctx.font = '9px "Press Start 2P"';
+  ctx.fillText('Iconoclastic Capital', W / 2, 250);
+  ctx.fillText('Fee-Only Fiduciary', W / 2, 270);
+
+  // CTA Button
+  const btnPulse = Math.sin(frameCount * 0.04) * 3;
+  const btnY = 310 + btnPulse;
+  // Button glow
+  ctx.fillStyle = `rgba(244, 208, 63, 0.15)`;
+  ctx.fillRect(70, btnY - 6, W - 140, 62);
+  // Button
+  ctx.fillStyle = PAL.wizardGold;
+  ctx.fillRect(80, btnY, W - 160, 50);
+  ctx.fillStyle = '#0a0a1a';
+  ctx.font = '12px "Press Start 2P"';
+  ctx.fillText("SEE IF WE'RE A FIT →", W / 2, btnY + 32);
+
+  ctx.fillStyle = PAL.gray;
+  ctx.font = '9px "Press Start 2P"';
+  ctx.fillText('CLICK or press SPACE', W / 2, H - 24);
+
+  ctx.textAlign = 'left';
+}
+
+// ========== ZONE NAME OVERLAY ==========
+let zoneNameTimer = 0;
+function drawZoneName() {
+  if (zoneNameTimer > 0) {
+    const alpha = zoneNameTimer > 40 ? 1 : zoneNameTimer / 40;
+    ctx.fillStyle = `rgba(0,0,0,${alpha * 0.7})`;
+    ctx.fillRect(0, H / 2 - 36, W, 50);
+    ctx.fillStyle = `rgba(232,232,232,${alpha})`;
+    ctx.font = '16px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(ZONES[currentZone].name, W / 2, H / 2 - 4);
+    ctx.textAlign = 'left';
+    zoneNameTimer--;
+  }
+}
+
+// ========== SETUP & MAIN LOOP ==========
+function setupZone() {
+  const z = ZONES[currentZone];
+  player.x = z.playerStart.x;
+  player.y = z.playerStart.y;
+  player.dir = 1; // face up
+  npcs = z.npcs ? z.npcs.map(n => ({ ...n, talked: false })) : [];
+  zoneNameTimer = 80;
+}
+
+function handleInput() {
+  if (gameState === 'title') {
+    // handled in keydown
+  }
+  else if (gameState === 'playing') {
+    moveTimer++;
+    if (moveTimer < 12) return; // movement speed limiter
+
+    let dx = 0, dy = 0;
+    if (keysDown['ArrowUp'] || keysDown['w'] || keysDown['W']) { dy = -1; player.dir = 1; }
+    else if (keysDown['ArrowDown'] || keysDown['s'] || keysDown['S']) { dy = 1; player.dir = 0; }
+    else if (keysDown['ArrowLeft'] || keysDown['a'] || keysDown['A']) { dx = -1; player.dir = 2; }
+    else if (keysDown['ArrowRight'] || keysDown['d'] || keysDown['D']) { dx = 1; player.dir = 3; }
+
+    if (dx !== 0 || dy !== 0) {
+      const nx = player.x + dx;
+      const ny = player.y + dy;
+      if (isWalkable(nx, ny)) {
+        player.x = nx;
+        player.y = ny;
+        player.frame++;
+        player.moving = true;
+        moveTimer = 0;
+        if (player.frame % 2 === 0) playSfxStep();
+
+        // Check exit
+        const z = ZONES[currentZone];
+        if (z.exitTile && player.x === z.exitTile.x && player.y === z.exitTile.y) {
+          if (z.quiz) {
+            showQuiz(z.quiz);
+          } else {
+            startTransition(() => {
+              currentZone++;
+              setupZone();
+            });
+          }
+        }
+
+        // Check quiz trigger
+        if (z.quiz && player.x === z.quiz.trigger.x && player.y === z.quiz.trigger.y) {
+          showQuiz(z.quiz);
+        }
+
+        // Check wizard
+        if (currentZone === 4 && z.wizard && wizardPhase === 0) {
+          const dist = Math.abs(player.x - z.wizard.x) + Math.abs(player.y - z.wizard.y);
+          if (dist <= 2) {
+            triggerEnding();
+          }
+        }
+      }
+      moveTimer = 0;
+    } else {
+      player.moving = false;
+    }
+  }
+}
+
+function interact() {
+  if (interactCooldown > 0) return;
+  interactCooldown = 10;
+
+  if (gameState === 'dialogue') {
+    if (!currentDialogue && dialogueQueue.length === 0) {
+      // Dialogue fully done — advance wizard if we're in wizard flow
+      if (currentZone === 4 && wizardPhase > 0 && wizardPhase < 5) {
+        advanceWizardPhase();
+      }
+      return;
+    }
+    playSfxInteract();
+    advanceDialogue();
+    return;
+  }
+
+  if (gameState === 'quiz') {
+    // Check if this is the wizard's quiz
+    if (currentZone === 4 && wizardQuizData) {
+      wizardAnswers.push(quizSelection);
+      quizAnswers.push({
+        question: wizardQuizData.question,
+        answer: wizardQuizData.options[quizSelection],
+        index: quizSelection
+      });
+      wizardQuizData = null;
+      playSfxQuizConfirm();
+      // After Q1 (phase 2), advance to phase 3 (Q2)
+      // After Q2 (phase 3), advance to phase 4 (guidance)
+      advanceWizardPhase();
+    } else {
+      playSfxQuizConfirm();
+      selectQuizAnswer();
+    }
+    return;
+  }
+
+  if (gameState === 'ending') {
+    window.open('https://iconocapital.com/get-started', '_blank');
+    return;
+  }
+
+  if (gameState === 'playing') {
+    // Check for NPC interaction
+    const facingX = player.x + (player.dir === 2 ? -1 : player.dir === 3 ? 1 : 0);
+    const facingY = player.y + (player.dir === 1 ? -1 : player.dir === 0 ? 1 : 0);
+
+    for (const npc of npcs) {
+      if (npc.x === facingX && npc.y === facingY) {
+        playSfxInteract();
+        showDialogue(npc.lines);
+        npc.talked = true;
+        return;
+      }
+      // Also check if standing adjacent
+      const dist = Math.abs(player.x - npc.x) + Math.abs(player.y - npc.y);
+      if (dist <= 1) {
+        playSfxInteract();
+        showDialogue(npc.lines);
+        npc.talked = true;
+        return;
+      }
+    }
+  }
+}
+
+function update() {
+  frameCount++;
+  if (interactCooldown > 0) interactCooldown--;
+
+  if (gameState === 'transition') {
+    updateTransition();
+  }
+  else if (gameState === 'playing') {
+    handleInput();
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (gameState === 'title') {
+    drawTitleScreen();
+  }
+  else if (gameState === 'ending') {
+    drawEndingCTA();
+  }
+  else {
+    drawZoneBackground(currentZone);
+
+    // Draw NPCs
+    for (const npc of npcs) {
+      // Make NPCs face the player when close
+      let npcDir = 0; // default face down
+      const distToPlayer = Math.abs(player.x - npc.x) + Math.abs(player.y - npc.y);
+      if (distToPlayer <= 3 && SPRITE_TYPES.has(npc.type)) {
+        // Face toward player
+        const dx = player.x - npc.x;
+        const dy = player.y - npc.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          npcDir = dx > 0 ? 3 : 2; // right or left
+        } else {
+          npcDir = dy > 0 ? 0 : 1; // down or up
+        }
+      }
+      drawSprite(npc.x, npc.y, npc.type, npcDir, frameCount);
+
+      // Draw interaction indicator for untouched character NPCs
+      if (!npc.talked && SPRITE_TYPES.has(npc.type) && distToPlayer <= 4) {
+        const bob = Math.sin(frameCount * 0.08) * 3;
+        const ix = npc.x * TILE + 12;
+        const iy = npc.y * TILE - CHAR_SIZE + TILE + 2 + bob; // above the scaled sprite head
+        ctx.fillStyle = PAL.wizardGold;
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillText('!', ix, iy);
+      }
+    }
+
+    // Draw wizard in zone 4
+    if (currentZone === 4 && ZONES[4].wizard) {
+      const wz = ZONES[4].wizard;
+      // Wizard faces player when close
+      let wzDir = 0;
+      const distW = Math.abs(player.x - wz.x) + Math.abs(player.y - wz.y);
+      if (distW <= 4) {
+        const dx = player.x - wz.x;
+        const dy = player.y - wz.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          wzDir = dx > 0 ? 3 : 2;
+        } else {
+          wzDir = dy > 0 ? 0 : 1;
+        }
+      }
+      drawSprite(wz.x, wz.y, 'wizard', wzDir, frameCount);
+
+      // Wizard glow effect
+      if (wizardPhase === 0) {
+        const glowAlpha = Math.sin(frameCount * 0.03) * 0.1 + 0.15;
+        ctx.fillStyle = `rgba(244, 208, 63, ${glowAlpha})`;
+        ctx.beginPath();
+        ctx.arc(wz.x * TILE + TILE / 2, wz.y * TILE, 36, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Draw player
+    drawSprite(player.x, player.y, 'player', player.dir, player.frame);
+
+    // Zone name
+    drawZoneName();
+
+    // HUD
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, 26);
+    ctx.fillStyle = PAL.wizardGold;
+    ctx.font = '10px "Press Start 2P"';
+    ctx.fillText(ZONES[currentZone].name, 8, 18);
+
+    // Dialogue
+    if (gameState === 'dialogue') {
+      drawDialogueBox();
+    }
+    // Quiz
+    if (gameState === 'quiz') {
+      drawQuiz();
+    }
+    // Transition
+    if (gameState === 'transition') {
+      drawTransition();
+    }
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ========== INPUT HANDLING ==========
+document.addEventListener('keydown', (e) => {
+  keysDown[e.key] = true;
+  initAudio();
+
+  if (gameState === 'title') {
+    if (e.key === 'ArrowUp' || e.key === 'w') {
+      titleSelection = (titleSelection - 1 + LIFE_STAGES.length) % LIFE_STAGES.length;
+      initAudio(); playSfxQuizSelect();
+    }
+    if (e.key === 'ArrowDown' || e.key === 's') {
+      titleSelection = (titleSelection + 1) % LIFE_STAGES.length;
+      initAudio(); playSfxQuizSelect();
+    }
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      initAudio();
+      playSfxQuizConfirm();
+      quizAnswers = [{ question: 'Life Stage', answer: LIFE_STAGES[titleSelection], index: titleSelection }];
+      gameState = 'transition';
+      transitionAlpha = 0;
+      transitionDir = 1;
+      transitionCallback = () => {
+        currentZone = 0;
+        setupZone();
+        startZoneMusic(0);
+      };
+    }
+  }
+  else if (gameState === 'quiz') {
+    const qd = (currentZone === 4 && wizardQuizData) ? wizardQuizData : quizData;
+    if (e.key === 'ArrowUp' || e.key === 'w') {
+      quizSelection = (quizSelection - 1 + qd.options.length) % qd.options.length;
+      playSfxQuizSelect();
+    }
+    if (e.key === 'ArrowDown' || e.key === 's') {
+      quizSelection = (quizSelection + 1) % qd.options.length;
+      playSfxQuizSelect();
+    }
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      interact();
+    }
+  }
+  else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    interact();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keysDown[e.key] = false;
+});
+
+// Mobile controls
+function setupMobile() {
+  const dirs = { 'btn-up': 'ArrowUp', 'btn-down': 'ArrowDown', 'btn-left': 'ArrowLeft', 'btn-right': 'ArrowRight' };
+  for (const [id, key] of Object.entries(dirs)) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); keysDown[key] = true; }, { passive: false });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); keysDown[key] = false; }, { passive: false });
+    btn.addEventListener('touchcancel', (e) => { e.preventDefault(); keysDown[key] = false; }, { passive: false });
+    btn.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+  }
+
+  const actionBtn = document.getElementById('action-btn');
+  if (actionBtn) {
+    actionBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      initAudio();
+      if (gameState === 'title') {
+        playSfxQuizConfirm();
+        quizAnswers = [{ question: 'Life Stage', answer: LIFE_STAGES[titleSelection], index: titleSelection }];
+        gameState = 'transition';
+        transitionAlpha = 0;
+        transitionDir = 1;
+        transitionCallback = () => { currentZone = 0; setupZone(); startZoneMusic(0); };
+      } else {
+        interact();
+      }
+    }, { passive: false });
+    actionBtn.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+  }
+
+  // Prevent iOS rubber-band scrolling and pull-to-refresh
+  document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+  document.addEventListener('gesturestart', (e) => { e.preventDefault(); }, { passive: false });
+  document.addEventListener('gesturechange', (e) => { e.preventDefault(); }, { passive: false });
+  document.addEventListener('gestureend', (e) => { e.preventDefault(); }, { passive: false });
+}
+
+// Canvas click for CTA
+canvas.addEventListener('click', (e) => {
+  initAudio();
+  if (gameState === 'ending') {
+    e.preventDefault();
+    window.open('https://iconocapital.com/get-started', '_blank');
+  }
+});
+
+// Touch on canvas
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  if (gameState === 'ending') {
+    window.open('https://iconocapital.com/get-started', '_blank');
+  }
+}, { passive: false });
+
+setupMobile();
+gameLoop();
+</script>
+</body>
+</html>
